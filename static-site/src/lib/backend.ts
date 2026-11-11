@@ -21,7 +21,10 @@ export type Profile = {
   display_name: string;
   bio: string | null;
   avatar_url: string | null;
+  role: CommunityRole;
 };
+
+export type CommunityRole = "user" | "moderator" | "admin" | "owner";
 
 export type CommunityPost = {
   id: string;

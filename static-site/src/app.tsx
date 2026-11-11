@@ -5,9 +5,12 @@ import {
   LogIn,
   LogOut,
   MessageCircle,
+  Moon,
   Plus,
   Send,
+  ShieldCheck,
   Store,
+  Sun,
   UserRound,
   UsersRound,
   X,
@@ -17,6 +20,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -25,52 +29,67 @@ import {
   type ChatMessage,
   type ChatRoom,
   type CommunityPost,
+  type CommunityRole,
   type Listing,
   type Profile,
   isBackendConfigured,
   supabase,
 } from "./lib/backend";
 
-type Page = "feed" | "overheard" | "chat" | "marketplace" | "channel" | "profile";
+type Page = "home" | "overheard" | "chat" | "marketplace" | "channel" | "profile" | "moderation";
 type Language = "ru" | "uk" | "en";
-type Author = Pick<Profile, "id" | "username" | "display_name">;
+type Theme = "light" | "dark";
+type Author = Pick<Profile, "id" | "username" | "display_name" | "role">;
 type CommentRow = { id: string; author_id: string; content: string; created_at: string };
+type ReviewListing = Pick<Listing, "id" | "author_id" | "title" | "description" | "price" | "category" | "status" | "created_at">;
+type PostDraft = { content: string; category: string; isAnonymous: boolean };
 type AuthMode = "sign-in" | "sign-up";
 
 const navigation: { id: Page; label: string; icon: typeof UsersRound }[] = [
-  { id: "feed", label: "Лента", icon: UsersRound },
+  { id: "home", label: "Главная", icon: UsersRound },
   { id: "overheard", label: "Подслушано", icon: Bell },
   { id: "chat", label: "Чат", icon: MessageCircle },
   { id: "marketplace", label: "Барахолка", icon: Store },
   { id: "channel", label: "Канал", icon: ArrowUpRight },
   { id: "profile", label: "Профиль", icon: UserRound },
+  { id: "moderation", label: "Модерация", icon: ShieldCheck },
 ];
+const roleRank: Record<CommunityRole, number> = { user: 0, moderator: 1, admin: 2, owner: 3 };
+const roleLabels: Record<CommunityRole, string> = {
+  user: "Пользователь",
+  moderator: "Модератор",
+  admin: "Администратор",
+  owner: "Владелец",
+};
 
 const pageHeadings: Record<Page, { title: string; description: string }> = {
-  feed: { title: "Жизнь кампуса — здесь", description: "Новости, вопросы и события сообщества ЗИЕИТ." },
-  overheard: { title: "Подслушано", description: "Истории студентов. Автор может остаться анонимным." },
+  home: { title: "Сообщество ЗИЕИТ", description: "Общайся, делись новостями и находи полезное для учёбы и жизни." },
+  overheard: { title: "Подслушано", description: "Истории и публикации студентов. Перед публикацией пост проверяет модерация." },
   chat: { title: "Студенческий чат", description: "Живое общение без автоответов и фальшивых пользователей." },
   marketplace: { title: "Барахолка", description: "Покупай, продавай и отдавай вещи студентам." },
   channel: { title: "Канал сообщества", description: "Публикации, прошедшие модерацию и отправленные в Telegram." },
   profile: { title: "Мой профиль", description: "Настрой имя, описание и ссылку на аватар." },
+  moderation: { title: "Панель команды", description: "Модерация публикаций и управление ролями участников." },
 };
 const pageHeadingsByLanguage: Record<Language, Record<Page, { title: string; description: string }>> = {
   ru: pageHeadings,
   uk: {
-    feed: { title: "Життя кампусу — тут", description: "Новини, питання та події спільноти ЗІЕІТ." },
-    overheard: { title: "Підслухано", description: "Історії студентів. Автор може залишитися анонімним." },
+    home: { title: "Спільнота ЗІЕІТ", description: "Спілкуйся, ділися новинами та знаходь корисне для навчання й життя." },
+    overheard: { title: "Подслушано", description: "Історії та дописи студентів. Перед публікацією допис перевіряє модерація." },
     chat: { title: "Студентський чат", description: "Живе спілкування без автоматичних відповідей." },
     marketplace: { title: "Барахолка", description: "Купуй, продавай і віддавай речі студентам." },
     channel: { title: "Канал спільноти", description: "Публікації після модерації та дописи з Telegram." },
     profile: { title: "Мій профіль", description: "Налаштуй ім’я, опис і посилання на аватар." },
+    moderation: { title: "Панель команди", description: "Модерація публікацій та керування ролями учасників." },
   },
   en: {
-    feed: { title: "Campus life, right here", description: "News, questions, and events from the ZIEIT community." },
+    home: { title: "ZIEIT Community", description: "Connect, share news, and find useful things for campus life." },
     overheard: { title: "Overheard", description: "Student stories. Authors may post anonymously." },
     chat: { title: "Student chat", description: "Live conversation with real community members." },
     marketplace: { title: "Marketplace", description: "Buy, sell, and give items to other students." },
     channel: { title: "Community channel", description: "Moderated posts shared with the Telegram channel." },
     profile: { title: "My profile", description: "Update your display name, bio, and avatar link." },
+    moderation: { title: "Team panel", description: "Review submissions and manage community roles." },
   },
 };
 
@@ -85,7 +104,7 @@ async function getAuthors(ids: string[]) {
   if (!uniqueIds.length) return new Map<string, Author>();
   const { data, error } = await client
     .from("community_profiles")
-    .select("id, username, display_name")
+    .select("id, username, display_name, role")
     .in("id", uniqueIds);
   if (error) throw error;
   return new Map((data ?? []).map((profile) => [profile.id, profile as Author]));
@@ -100,9 +119,16 @@ function formatTime(value: string) {
   }).format(new Date(value));
 }
 
+function RoleBadge({ role }: { role: CommunityRole }) {
+  if (role === "user") return null;
+  return <span className={`role-badge role-${role}`}>{roleLabels[role]}</span>;
+}
+
 export function App() {
-  const [page, setPage] = useState<Page>("feed");
+  const [page, setPage] = useState<Page>("home");
+  const [postPreview, setPostPreview] = useState<PostDraft | null>(null);
   const [language, setLanguage] = useState<Language>("ru");
+  const [theme, setTheme] = useState<Theme>("light");
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
@@ -111,8 +137,12 @@ export function App() {
   const [posts, setPosts] = useState<CommunityPost[]>([]);
   const [authors, setAuthors] = useState<Map<string, Author>>(new Map());
   const [listings, setListings] = useState<Listing[]>([]);
+  const [pendingPosts, setPendingPosts] = useState<CommunityPost[]>([]);
+  const [pendingListings, setPendingListings] = useState<ReviewListing[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
   const [rooms, setRooms] = useState<ChatRoom[]>([]);
   const [busy, setBusy] = useState(false);
+  const postComposerRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     const applyHash = () => {
@@ -127,12 +157,18 @@ export function App() {
   useEffect(() => {
     const saved = window.localStorage.getItem("zieit-language");
     if (saved === "uk" || saved === "ru" || saved === "en") setLanguage(saved);
+    if (window.localStorage.getItem("zieit-theme") === "dark") setTheme("dark");
   }, []);
 
   useEffect(() => {
     document.documentElement.lang = language;
     window.localStorage.setItem("zieit-language", language);
   }, [language]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    window.localStorage.setItem("zieit-theme", theme);
+  }, [theme]);
 
   useEffect(() => {
     if (!supabase) return;
@@ -153,7 +189,7 @@ export function App() {
     let active = true;
     void supabase
       .from("community_profiles")
-      .select("id, username, display_name, bio, avatar_url")
+      .select("id, username, display_name, bio, avatar_url, role")
       .eq("id", user.id)
       .maybeSingle()
       .then(({ data, error: profileError }) => {
@@ -167,8 +203,47 @@ export function App() {
     };
   }, [user]);
 
+  const canModerate = Boolean(profile && roleRank[profile.role] >= roleRank.moderator);
+
+  const loadModeration = useCallback(async () => {
+    if (!supabase || page !== "moderation" || !canModerate) return;
+    setError("");
+    let postsQuery = supabase
+      .from("community_posts")
+      .select("id, author_id, category, content, is_anonymous, moderation_status, source, published_to_channel, created_at")
+      .order("created_at", { ascending: false })
+      .limit(150);
+    let listingsQuery = supabase
+      .from("marketplace_listings")
+      .select("id, author_id, title, description, price, category, status, created_at")
+      .order("created_at", { ascending: false })
+      .limit(150);
+    if (profile?.role !== "owner") {
+      postsQuery = postsQuery.eq("moderation_status", "pending");
+      listingsQuery = listingsQuery.eq("status", "pending");
+    }
+    const [postResult, listingResult] = await Promise.all([postsQuery, listingsQuery]);
+    if (postResult.error) setError(postResult.error.message);
+    else setPendingPosts((postResult.data ?? []) as CommunityPost[]);
+    if (listingResult.error) setError(listingResult.error.message);
+    else setPendingListings((listingResult.data ?? []) as ReviewListing[]);
+
+    if (profile && roleRank[profile.role] >= roleRank.admin) {
+      const { data, error: membersError } = await supabase
+        .from("community_profiles")
+        .select("id, username, display_name, bio, avatar_url, role")
+        .order("username");
+      if (membersError) setError(membersError.message);
+      else setMembers((data ?? []) as Profile[]);
+    }
+  }, [canModerate, page, profile?.role]);
+
+  useEffect(() => {
+    void loadModeration();
+  }, [loadModeration]);
+
   const loadPosts = useCallback(async () => {
-    if (!supabase || (page !== "feed" && page !== "overheard" && page !== "channel")) return;
+    if (!supabase || (page !== "overheard" && page !== "channel")) return;
     setError("");
     let query = supabase
       .from("community_posts")
@@ -177,7 +252,6 @@ export function App() {
       .order("created_at", { ascending: false })
       .limit(60);
 
-    if (page === "overheard") query = query.eq("category", "overheard");
     if (page === "channel") query = query.eq("published_to_channel", true);
 
     const { data, error: postsError } = await query;
@@ -202,8 +276,10 @@ export function App() {
       .select("id, author_id, title, description, price, category, status, created_at")
       .order("created_at", { ascending: false })
       .limit(60);
-    if (user) query = query.or(`status.eq.active,author_id.eq.${user.id}`);
-    else query = query.eq("status", "active");
+    if (profile?.role !== "owner") {
+      if (user) query = query.or(`status.eq.active,author_id.eq.${user.id}`);
+      else query = query.eq("status", "active");
+    }
 
     const { data, error: listingsError } = await query;
     if (listingsError) {
@@ -217,7 +293,7 @@ export function App() {
     } catch (authorError) {
       setError(authorError instanceof Error ? authorError.message : "Не удалось загрузить авторов.");
     }
-  }, [page, user]);
+  }, [page, profile?.role, user]);
 
   useEffect(() => {
     void loadPosts();
@@ -236,9 +312,8 @@ export function App() {
       });
   }, []);
 
-  async function submitPost(event: FormEvent<HTMLFormElement>) {
+  function previewPost(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const formElement = event.currentTarget;
     if (!user) {
       setAuthMode("sign-in");
       return;
@@ -250,26 +325,42 @@ export function App() {
       return;
     }
 
+    setError("");
+    setPostPreview({
+      content,
+      category: String(form.get("category") ?? "overheard"),
+      isAnonymous: form.get("anonymous") === "on",
+    });
+  }
+
+  async function publishPost() {
+    if (!user || !postPreview) return;
     setBusy(true);
     setError("");
     try {
       const client = requireBackend();
       const { error: insertError } = await client.from("community_posts").insert({
         author_id: user.id,
-        category: page === "overheard" ? "overheard" : String(form.get("category") ?? "general"),
-        content,
-        is_anonymous: page === "overheard" && form.get("anonymous") === "on",
+        category: postPreview.category,
+        content: postPreview.content,
+        is_anonymous: postPreview.isAnonymous,
         source: "site",
         moderation_status: "pending",
       });
       if (insertError) throw insertError;
-      formElement.reset();
-      setNotice("Пост отправлен на модерацию. После одобрения он появится в ленте и Telegram.");
+      postComposerRef.current?.reset();
+      setPostPreview(null);
+      setNotice("Пост отправлен модераторам. После одобрения он появится в Подслушано и Telegram.");
       await loadPosts();
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Не удалось отправить публикацию.");
     } finally {
       setBusy(false);
+    }
+
+    function cancelPostPreview() {
+      postComposerRef.current?.reset();
+      setPostPreview(null);
     }
   }
 
@@ -327,13 +418,99 @@ export function App() {
         .from("community_profiles")
         .update(updates)
         .eq("id", user.id)
-        .select("id, username, display_name, bio, avatar_url")
+        .select("id, username, display_name, bio, avatar_url, role")
         .single();
       if (updateError) throw updateError;
       setProfile(data as Profile);
       setNotice("Профиль сохранён.");
     } catch (updateError) {
       setError(updateError instanceof Error ? updateError.message : "Не удалось сохранить профиль.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewPost(postId: string, nextStatus: "approved" | "rejected") {
+    setBusy(true);
+    setError("");
+    try {
+      const { error: reviewError } = await requireBackend().rpc("moderate_community_post", {
+        target_post_id: postId,
+        next_status: nextStatus,
+      });
+      if (reviewError) throw reviewError;
+      setNotice(nextStatus === "approved" ? "Пост одобрен." : "Пост отклонён.");
+      await Promise.all([loadModeration(), loadPosts()]);
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Не удалось изменить статус поста.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reviewListing(listingId: string, nextStatus: "active" | "rejected") {
+    setBusy(true);
+    setError("");
+    try {
+      const { error: reviewError } = await requireBackend().rpc("moderate_marketplace_listing", {
+        target_listing_id: listingId,
+        next_status: nextStatus,
+      });
+      if (reviewError) throw reviewError;
+      setNotice(nextStatus === "active" ? "Объявление опубликовано." : "Объявление отклонено.");
+      await Promise.all([loadModeration(), loadListings()]);
+    } catch (reviewError) {
+      setError(reviewError instanceof Error ? reviewError.message : "Не удалось изменить статус объявления.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function updateMemberRole(memberId: string, nextRole: CommunityRole) {
+    setBusy(true);
+    setError("");
+    try {
+      const { error: roleError } = await requireBackend().rpc("set_community_role", {
+        target_user_id: memberId,
+        next_role: nextRole,
+      });
+      if (roleError) throw roleError;
+      setNotice("Роль участника обновлена.");
+      await loadModeration();
+      if (memberId === user?.id) {
+        const { data, error: profileError } = await requireBackend()
+          .from("community_profiles")
+          .select("id, username, display_name, bio, avatar_url, role")
+          .eq("id", memberId)
+          .single();
+        if (profileError) throw profileError;
+        setProfile(data as Profile);
+      }
+    } catch (roleError) {
+      setError(roleError instanceof Error ? roleError.message : "Не удалось изменить роль.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function ownerDelete(
+    functionName: "owner_delete_community_post" | "owner_delete_marketplace_listing" | "owner_delete_chat_message",
+    targetId: string,
+  ) {
+    if (profile?.role !== "owner") {
+      setError("Удалять материалы может только владелец сообщества.");
+      return;
+    }
+
+    setBusy(true);
+    setError("");
+    try {
+      const { error: deleteError } = await requireBackend().rpc(functionName, { target_id: targetId });
+      if (deleteError) throw deleteError;
+      setNotice("Материал удалён.");
+      await Promise.all([loadPosts(), loadListings(), loadModeration()]);
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Не удалось удалить материал.");
     } finally {
       setBusy(false);
     }
@@ -355,6 +532,7 @@ export function App() {
 
   const heading = pageHeadingsByLanguage[language][page];
   const accountLabel = profile?.display_name || user?.email || "";
+  const visibleNavigation = navigation.filter((item) => item.id !== "moderation" || canModerate);
 
   return (
     <div className="app-shell">
@@ -369,7 +547,7 @@ export function App() {
           <span>Место, где студенты рядом</span>
         </div>
         <nav className="main-nav" aria-label="Основная навигация">
-          {navigation.map(({ id, label, icon: Icon }) => (
+          {visibleNavigation.map(({ id, label, icon: Icon }) => (
             <button key={id} type="button" className={page === id ? "nav-item active" : "nav-item"} onClick={() => navigate(id)}>
               <Icon size={18} />
               {label}
@@ -382,7 +560,7 @@ export function App() {
             <>
               <div className="user-chip">
                 <span className="avatar">{accountLabel.slice(0, 1).toUpperCase() || "С"}</span>
-                <span><strong>{accountLabel}</strong><small>@{profile?.username ?? "студент"}</small></span>
+                <span><strong>{accountLabel}</strong><small>@{profile?.username ?? "студент"}</small>{profile && <RoleBadge role={profile.role} />}</span>
               </div>
               <button className="subtle-button" type="button" onClick={() => void signOut()}><LogOut size={16} /> Выйти</button>
             </>
@@ -400,6 +578,9 @@ export function App() {
         <header className="topbar">
           <div className="breadcrumb">СООБЩЕСТВО <span>/</span> {navigation.find((item) => item.id === page)?.label.toUpperCase()}</div>
           <div className="topbar-actions">
+            <button className="icon-button" aria-label={theme === "dark" ? "Включить светлую тему" : "Включить тёмную тему"} title={theme === "dark" ? "Светлая тема" : "Тёмная тема"} type="button" onClick={() => setTheme((current) => current === "dark" ? "light" : "dark")}>
+              {theme === "dark" ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             <label className="language-control">
               <span className="sr-only">Язык</span>
               <select aria-label="Язык интерфейса" value={language} onChange={(event) => setLanguage(event.target.value as Language)}>
@@ -434,25 +615,25 @@ export function App() {
                 <PostComposer page={page} busy={busy} signedIn={Boolean(user)} onSubmit={submitPost} onNeedAuth={() => setAuthMode("sign-in")} />
                 <div className="section-title"><h2>{page === "overheard" ? "Истории студентов" : "Последние публикации"}</h2><span>{posts.length} публикаций</span></div>
                 <div className="card-list">
-                  {posts.map((post) => <PostCard key={post.id} post={post} author={authors.get(post.author_id)} user={user} onNeedAuth={() => setAuthMode("sign-in")} />)}
+                  {posts.map((post) => <PostCard key={post.id} post={post} author={authors.get(post.author_id)} user={user} isOwner={profile?.role === "owner"} onOwnerDelete={(id) => void ownerDelete("owner_delete_community_post", id)} onNeedAuth={() => setAuthMode("sign-in")} />)}
                   {posts.length === 0 && <EmptyCard title="Пока нет публикаций" text="Публикации появятся здесь после одобрения модератора." />}
                 </div>
               </>
             )}
-            {page === "chat" && <ChatPanel rooms={rooms} user={user} onNeedAuth={() => setAuthMode("sign-in")} />}
+            {page === "chat" && <ChatPanel rooms={rooms} user={user} role={profile?.role ?? "user"} onNeedAuth={() => setAuthMode("sign-in")} onOwnerDelete={(id) => void ownerDelete("owner_delete_chat_message", id)} />}
             {page === "marketplace" && (
               <>
                 <ListingComposer busy={busy} signedIn={Boolean(user)} onSubmit={submitListing} onNeedAuth={() => setAuthMode("sign-in")} />
                 <div className="section-title"><h2>Объявления</h2><span>{listings.length} предложений</span></div>
                 <div className="listing-grid">
-                  {listings.map((listing) => <ListingCard key={listing.id} listing={listing} author={authors.get(listing.author_id)} />)}
+                  {listings.map((listing) => <ListingCard key={listing.id} listing={listing} author={authors.get(listing.author_id)} isOwner={profile?.role === "owner"} onOwnerDelete={(id) => void ownerDelete("owner_delete_marketplace_listing", id)} />)}
                   {listings.length === 0 && <EmptyCard title="Объявлений пока нет" text="Создайте первое объявление — оно появится после проверки." />}
                 </div>
               </>
             )}
             {page === "channel" && (
               <div className="card-list">
-                {posts.map((post) => <PostCard key={post.id} post={post} author={authors.get(post.author_id)} user={user} onNeedAuth={() => setAuthMode("sign-in")} />)}
+                {posts.map((post) => <PostCard key={post.id} post={post} author={authors.get(post.author_id)} user={user} isOwner={profile?.role === "owner"} onOwnerDelete={(id) => void ownerDelete("owner_delete_community_post", id)} onNeedAuth={() => setAuthMode("sign-in")} />)}
                 {posts.length === 0 && <EmptyCard title="Канал готовится" text="Здесь появятся публикации, одобренные модераторами и отправленные в Telegram." />}
                 <a className="telegram-banner" href="https://t.me/testerrnet" target="_blank" rel="noreferrer"><span><strong>Канал в Telegram</strong><small>Публикации сайта и Telegram после модерации</small></span><ArrowUpRight /></a>
               </div>
@@ -460,7 +641,7 @@ export function App() {
             {page === "profile" && (
               user && profile ? (
                 <form className="surface profile-form" onSubmit={(event) => void updateProfile(event)}>
-                  <div className="profile-hero"><span className="avatar avatar-large">{profile.display_name.slice(0, 1).toUpperCase()}</span><div><h2>{profile.display_name}</h2><span>@{profile.username}</span></div></div>
+                  <div className="profile-hero"><span className="avatar avatar-large">{profile.display_name.slice(0, 1).toUpperCase()}</span><div><h2>{profile.display_name}</h2><span>@{profile.username}</span><RoleBadge role={profile.role} /></div></div>
                   <label className="field"><span>Имя в профиле</span><input name="display_name" required maxLength={48} defaultValue={profile.display_name} /></label>
                   <label className="field"><span>О себе</span><textarea name="bio" maxLength={240} rows={3} defaultValue={profile.bio ?? ""} placeholder="Расскажите о себе" /></label>
                   <label className="field"><span>Ссылка на аватар</span><input name="avatar_url" type="url" defaultValue={profile.avatar_url ?? ""} placeholder="https://..." /></label>
@@ -468,6 +649,24 @@ export function App() {
                 </form>
               ) : (
                 <EmptyCard title="Войдите, чтобы открыть профиль" text="Регистрация нужна для сообщений, объявлений и участия в жизни сообщества." action={<button className="primary-button" type="button" onClick={() => setAuthMode("sign-in")}>Войти или зарегистрироваться</button>} />
+              )
+            )}
+            {page === "moderation" && (
+              canModerate ? (
+                <ModerationPanel
+                  posts={pendingPosts}
+                  listings={pendingListings}
+                    members={profile && roleRank[profile.role] >= roleRank.admin ? members : []}
+                  isOwner={profile?.role === "owner"}
+                  busy={busy}
+                  onReviewPost={(id, status) => void reviewPost(id, status)}
+                  onReviewListing={(id, status) => void reviewListing(id, status)}
+                  onSetRole={(id, role) => void updateMemberRole(id, role)}
+                  onOwnerDeletePost={(id) => void ownerDelete("owner_delete_community_post", id)}
+                  onOwnerDeleteListing={(id) => void ownerDelete("owner_delete_marketplace_listing", id)}
+                />
+              ) : (
+                <EmptyCard title="Доступ запрещён" text="Панель доступна только модераторам, администраторам и владельцу сообщества." />
               )
             )}
           </div>
@@ -482,6 +681,105 @@ export function App() {
       </main>
 
       {authMode && <AuthDialog mode={authMode} onClose={() => setAuthMode(null)} onModeChange={setAuthMode} onNotice={setNotice} onError={setError} />}
+    </div>
+  );
+}
+
+function ModerationPanel({
+  posts,
+  listings,
+  members,
+  isOwner,
+  busy,
+  onReviewPost,
+  onReviewListing,
+  onSetRole,
+  onOwnerDeletePost,
+  onOwnerDeleteListing,
+}: {
+  posts: CommunityPost[];
+  listings: ReviewListing[];
+  members: Profile[];
+  isOwner: boolean;
+  busy: boolean;
+  onReviewPost: (id: string, status: "approved" | "rejected") => void;
+  onReviewListing: (id: string, status: "active" | "rejected") => void;
+  onSetRole: (id: string, role: CommunityRole) => void;
+  onOwnerDeletePost: (id: string) => void;
+  onOwnerDeleteListing: (id: string) => void;
+}) {
+  return (
+    <div className="moderation-panel">
+      <div className="surface rules-card">
+        <h2>Права доступа</h2>
+        <ul>
+          <li><strong>Пользователь:</strong> редактирует свой профиль, пишет в чат и отправляет посты и объявления на проверку.</li>
+          <li><strong>Модератор:</strong> дополнительно одобряет или отклоняет посты и объявления.</li>
+          <li><strong>Администратор:</strong> выполняет модерацию и назначает или снимает роль модератора.</li>
+          <li><strong>Владелец:</strong> управляет всеми ролями, включая администраторов и владельцев.</li>
+        </ul>
+      </div>
+
+      <section>
+        <div className="section-title"><h2>{isOwner ? "Все публикации" : "Посты на проверке"}</h2><span>{posts.length}</span></div>
+        <div className="card-list">
+          {posts.map((post) => (
+            <article className="surface moderation-card" key={post.id}>
+              <div className="composer-controls"><span className="category-pill">{post.category}</span><span className="muted small">{post.source === "telegram" ? "Из Telegram" : "С сайта"} · {formatTime(post.created_at)}</span></div>
+              <p>{post.content}</p>
+              <small className="muted">{post.is_anonymous ? "Анонимная публикация" : `Автор: ${post.author_id}`}</small>
+              <div className="moderation-actions">
+                <span className="pending-pill">{post.moderation_status === "pending" ? "На проверке" : post.moderation_status === "approved" ? "Одобрен" : "Отклонён"}</span>
+                {post.moderation_status === "pending" && <><button className="primary-button" disabled={busy} type="button" onClick={() => onReviewPost(post.id, "approved")}>Одобрить</button><button className="subtle-button" disabled={busy} type="button" onClick={() => onReviewPost(post.id, "rejected")}>Отклонить</button></>}
+                {isOwner && <button className="post-action owner-delete" disabled={busy} type="button" onClick={() => { if (window.confirm("Удалить публикацию без возможности восстановления?")) onOwnerDeletePost(post.id); }}>Удалить навсегда</button>}
+              </div>
+            </article>
+          ))}
+          {posts.length === 0 && <EmptyCard title="Новых постов нет" text="Все публикации проверены." />}
+        </div>
+      </section>
+
+      <section>
+        <div className="section-title"><h2>{isOwner ? "Все объявления" : "Объявления на проверке"}</h2><span>{listings.length}</span></div>
+        <div className="card-list">
+          {listings.map((listing) => (
+            <article className="surface moderation-card" key={listing.id}>
+              <div className="composer-controls"><span className="category-pill">{listing.category}</span><span className="muted small">{formatTime(listing.created_at)}</span></div>
+              <h3>{listing.title}</h3>
+              <p>{listing.description}</p>
+              <strong>{listing.price === null ? "Договорная" : `${listing.price.toLocaleString("ru-RU")} ₴`}</strong>
+              <div className="moderation-actions">
+                <span className="pending-pill">{listing.status === "pending" ? "На проверке" : listing.status === "active" ? "Активно" : listing.status === "sold" ? "Продано" : "Отклонено"}</span>
+                {listing.status === "pending" && <><button className="primary-button" disabled={busy} type="button" onClick={() => onReviewListing(listing.id, "active")}>Опубликовать</button><button className="subtle-button" disabled={busy} type="button" onClick={() => onReviewListing(listing.id, "rejected")}>Отклонить</button></>}
+                {isOwner && <button className="post-action owner-delete" disabled={busy} type="button" onClick={() => { if (window.confirm("Удалить объявление без возможности восстановления?")) onOwnerDeleteListing(listing.id); }}>Удалить навсегда</button>}
+              </div>
+            </article>
+          ))}
+          {listings.length === 0 && <EmptyCard title="Новых объявлений нет" text="Все объявления проверены." />}
+        </div>
+      </section>
+
+      {members.length > 0 && (
+        <section>
+          <div className="section-title"><h2>Управление ролями</h2><span>{members.length} участников</span></div>
+          <div className="card-list">
+            {members.map((member) => (
+              <article className="surface moderation-card member-role-row" key={member.id}>
+                <div><strong>{member.display_name}</strong><small>@{member.username}</small><RoleBadge role={member.role} /></div>
+                <label className="field role-field">
+                  <span className="sr-only">Роль пользователя {member.username}</span>
+                  <select value={member.role} disabled={busy || (!isOwner && member.role !== "user" && member.role !== "moderator")} onChange={(event) => onSetRole(member.id, event.target.value as CommunityRole)}>
+                    <option value="user">Пользователь</option>
+                    <option value="moderator">Модератор</option>
+                    {!isOwner && member.role !== "user" && member.role !== "moderator" && <option value={member.role}>{roleLabels[member.role]}</option>}
+                    {isOwner && <><option value="admin">Администратор</option><option value="owner">Владелец</option></>}
+                  </select>
+                </label>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
     </div>
   );
 }
@@ -501,7 +799,7 @@ function PostComposer({ page, busy, signedIn, onSubmit, onNeedAuth }: { page: Pa
   );
 }
 
-function PostCard({ post, author, user, onNeedAuth }: { post: CommunityPost; author?: Author; user: User | null; onNeedAuth: () => void }) {
+function PostCard({ post, author, user, isOwner, onOwnerDelete, onNeedAuth }: { post: CommunityPost; author?: Author; user: User | null; isOwner: boolean; onOwnerDelete: (id: string) => void; onNeedAuth: () => void }) {
   const [liked, setLiked] = useState(false);
   const [likes, setLikes] = useState(0);
   const [comments, setComments] = useState<CommentRow[]>([]);
@@ -599,11 +897,17 @@ function PostCard({ post, author, user, onNeedAuth }: { post: CommunityPost; aut
     if (!commentOpen) await loadComments();
   }
 
+  async function deleteComment(commentId: string) {
+    const { error: deleteError } = await requireBackend().rpc("owner_delete_comment", { target_id: commentId });
+    if (deleteError) setError(deleteError.message);
+    else await loadComments();
+  }
+
   return (
     <article className="surface post-card">
       <header className="post-meta">
         <span className="avatar">{post.is_anonymous ? "?" : (author?.display_name.slice(0, 1).toUpperCase() ?? "С")}</span>
-        <span className="post-author"><strong>{post.is_anonymous ? "Анонимный студент" : author?.display_name ?? "Студент"}</strong><small>{formatTime(post.created_at)} · {post.source === "telegram" ? "Telegram" : "Сайт"}</small></span>
+        <span className="post-author"><strong>{post.is_anonymous ? "Анонимный студент" : author?.display_name ?? "Студент"}</strong>{!post.is_anonymous && author && <RoleBadge role={author.role} />}<small>{formatTime(post.created_at)} · {post.source === "telegram" ? "Telegram" : "Сайт"}</small></span>
         <span className="category-pill">{post.category === "overheard" ? "Подслушано" : post.category}</span>
       </header>
       <p className="post-content">{post.content}</p>
@@ -611,17 +915,18 @@ function PostCard({ post, author, user, onNeedAuth }: { post: CommunityPost; aut
         <button className={liked ? "post-action liked" : "post-action"} type="button" onClick={() => void toggleReaction()}><Heart size={16} fill={liked ? "currentColor" : "none"} /> {likes}</button>
         <button className="post-action" type="button" onClick={() => void toggleComments()}><MessageCircle size={16} /> {commentOpen ? "Скрыть комментарии" : "Комментарии"}</button>
         {post.published_to_channel && <span className="published-label">Есть в Telegram</span>}
+        {isOwner && <button className="post-action owner-delete" type="button" onClick={() => { if (window.confirm("Удалить эту публикацию и все её комментарии?")) onOwnerDelete(post.id); }}>Удалить</button>}
       </footer>
       {error && <p className="inline-error">{error}</p>}
       {commentOpen && <div className="comments-area">
-        {comments.map((comment) => <div className="comment" key={comment.id}><strong>{commentAuthors.get(comment.author_id)?.display_name ?? "Студент"}</strong><p>{comment.content}</p><small>{formatTime(comment.created_at)}</small></div>)}
+        {comments.map((comment) => <div className="comment" key={comment.id}><strong>{commentAuthors.get(comment.author_id)?.display_name ?? "Студент"}</strong><RoleBadge role={commentAuthors.get(comment.author_id)?.role ?? "user"} /><p>{comment.content}</p><small>{formatTime(comment.created_at)}</small>{isOwner && <button className="post-action owner-delete" type="button" onClick={() => { if (window.confirm("Удалить комментарий?")) void deleteComment(comment.id); }}>Удалить комментарий</button>}</div>)}
         {user ? <form className="comment-form" onSubmit={(event) => void submitComment(event)}><input value={commentDraft} onChange={(event) => setCommentDraft(event.target.value)} maxLength={1000} placeholder="Написать комментарий…" /><button className="icon-button" aria-label="Отправить комментарий" type="submit"><Send size={16} /></button></form> : <button className="text-button" type="button" onClick={onNeedAuth}>Войдите, чтобы комментировать</button>}
       </div>}
     </article>
   );
 }
 
-function ChatPanel({ rooms, user, onNeedAuth }: { rooms: ChatRoom[]; user: User | null; onNeedAuth: () => void }) {
+function ChatPanel({ rooms, user, role, onNeedAuth }: { rooms: ChatRoom[]; user: User | null; role: CommunityRole; onNeedAuth: () => void }) {
   const [roomKey, setRoomKey] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [authors, setAuthors] = useState<Map<string, Author>>(new Map());
@@ -673,6 +978,15 @@ function ChatPanel({ rooms, user, onNeedAuth }: { rooms: ChatRoom[]; user: User 
           setAuthors((current) => new Map([...current, ...map]));
         }).catch((authorError: unknown) => setError(authorError instanceof Error ? authorError.message : "Не удалось загрузить автора."));
       })
+      .on("postgres_changes", {
+        event: "DELETE",
+        schema: "public",
+        table: "community_chat_messages",
+        filter: `room_key=eq.${roomKey}`,
+      }, (payload) => {
+        const deletedId = payload.old.id as string | undefined;
+        if (deletedId) setMessages((current) => current.filter((message) => message.id !== deletedId));
+      })
       .subscribe((status) => {
         if (status === "CHANNEL_ERROR") setError("Не удалось подключиться к live-чату. Проверьте Supabase Realtime.");
       });
@@ -722,6 +1036,7 @@ function ChatPanel({ rooms, user, onNeedAuth }: { rooms: ChatRoom[]; user: User 
         id: user.id,
         username: user.user_metadata.username ?? "",
         display_name: user.user_metadata.display_name ?? user.email ?? "Студент",
+        role,
       }));
       setDraft("");
       setTitle("");
@@ -737,6 +1052,13 @@ function ChatPanel({ rooms, user, onNeedAuth }: { rooms: ChatRoom[]; user: User 
     }
   }
 
+  async function deleteChatMessage(messageId: string) {
+    if (role !== "owner" || !window.confirm("Удалить сообщение из чата?")) return;
+    const { error: deleteError } = await requireBackend().rpc("owner_delete_chat_message", { target_id: messageId });
+    if (deleteError) setError(deleteError.message);
+    else setMessages((current) => current.filter((message) => message.id !== messageId));
+  }
+
   const activeRoom = rooms.find((room) => room.key === roomKey);
 
   return (
@@ -750,9 +1072,10 @@ function ChatPanel({ rooms, user, onNeedAuth }: { rooms: ChatRoom[]; user: User 
         <header className="chat-header"><div><h2>{activeRoom?.name ?? "Чат"}</h2><p>{activeRoom?.description ?? "Открытый чат студентов"}</p></div><span className="live-badge"><i /> Live</span></header>
         <div className="message-list" aria-live="polite">
           {messages.map((message) => <article className={message.message_type === "listing" ? "chat-message chat-listing" : "chat-message"} key={message.id}>
-            <div className="message-meta"><strong>{authors.get(message.author_id)?.display_name ?? "Студент"}</strong><time>{formatTime(message.created_at)}</time></div>
+            <div className="message-meta"><span><strong>{authors.get(message.author_id)?.display_name ?? "Студент"}</strong> <RoleBadge role={authors.get(message.author_id)?.role ?? "user"} /></span><time>{formatTime(message.created_at)}</time></div>
             {message.message_type === "listing" && <div className="message-listing-title"><Store size={15} /> {message.listing_title}{message.listing_price !== null && <strong>{message.listing_price.toLocaleString("ru-RU")} ₴</strong>}</div>}
             {message.content && <p>{message.content}</p>}
+            {role === "owner" && <button className="post-action owner-delete" type="button" onClick={() => void deleteChatMessage(message.id)}>Удалить сообщение</button>}
           </article>)}
           {!messages.length && <div className="empty-chat">Пока тихо. Напишите первое сообщение.</div>}
         </div>
@@ -777,10 +1100,10 @@ function ListingComposer({ busy, signedIn, onSubmit, onNeedAuth }: { busy: boole
   </form>;
 }
 
-function ListingCard({ listing, author }: { listing: Listing; author?: Author }) {
+function ListingCard({ listing, author, isOwner, onOwnerDelete }: { listing: Listing; author?: Author; isOwner: boolean; onOwnerDelete: (id: string) => void }) {
   return <article className="surface listing-card">
     <div className="listing-art"><Store size={27} /></div>
-    <div className="listing-card-body"><span className="category-pill">{listing.category}</span><h3>{listing.title}</h3>{listing.description && <p>{listing.description}</p>}<strong className="listing-price">{listing.price === null ? "Договорная" : `${listing.price.toLocaleString("ru-RU")} ₴`}</strong><div className="listing-seller"><span>@{author?.username ?? "студент"}</span>{listing.status === "pending" && <span className="pending-pill">На проверке</span>}</div></div>
+    <div className="listing-card-body"><span className="category-pill">{listing.category}</span><h3>{listing.title}</h3>{listing.description && <p>{listing.description}</p>}<strong className="listing-price">{listing.price === null ? "Договорная" : `${listing.price.toLocaleString("ru-RU")} ₴`}</strong><div className="listing-seller"><span>@{author?.username ?? "студент"} {author && <RoleBadge role={author.role} />}</span>{listing.status !== "active" && <span className="pending-pill">{listing.status === "pending" ? "На проверке" : "Отклонено"}</span>}</div>{isOwner && <button className="post-action owner-delete" type="button" onClick={() => { if (window.confirm("Удалить объявление из барахолки?")) onOwnerDelete(listing.id); }}>Удалить объявление</button>}</div>
   </article>;
 }
 
