@@ -70,9 +70,19 @@ npm run lint
 npm run build
 ```
 
-## GitHub → Vercel
+## GitHub Pages / Vercel
 
-Імпортуй цей GitHub-репозиторій у Vercel та додай production-змінні середовища в налаштуваннях проєкту. Після підключення Git кожен push запускає Vercel build/deploy; push-и до інших гілок можуть створювати preview deployments. Для preview налаштуй окремі Supabase credentials, щоб тестові дані не потрапили в production. Хостинг через GitHub Pages не використовується.
+Для статичного прев’ю на GitHub Pages проєкт налаштований на `output: "export"`. У production для логіну, бази даних, Telegram-sync і реальних публікацій рекомендується Vercel, бо GitHub Pages не підтримує серверні API routes, PostgreSQL і авторизацію.
+
+Для GitHub Pages:
+
+```powershell
+npm run build:github-pages
+```
+
+Готовий статичний сайт збирається в `out/` і може деплоїтися через GitHub Pages Actions. У репозиторії вже є workflow `.github/workflows/deploy-pages.yml`.
+
+Для повної функціональності (Supabase, API, Telegram-to-site handoff): імпортуй цей GitHub-репозиторій у Vercel і додай production-змінні середовища. Після підключення Git кожен push запускає Vercel build/deploy; push-и до інших гілок можуть створювати preview deployments.
 
 ## Telegram handoff
 
