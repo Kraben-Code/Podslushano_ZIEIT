@@ -30,7 +30,19 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate public Supabase configuration
+        env:
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          test -n "$VITE_SUPABASE_URL" || (echo "::error::Set the SUPABASE_URL repository variable." && exit 1)
+          test -n "$VITE_SUPABASE_ANON_KEY" || (echo "::error::Set the SUPABASE_ANON_KEY repository variable." && exit 1)
+
       - name: Build static site
+        env:
+          VITE_SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+          VITE_BASE_PATH: /Podslushano_ZIEIT/
         run: npm run build:github-pages
 
       - name: Add Pages marker
