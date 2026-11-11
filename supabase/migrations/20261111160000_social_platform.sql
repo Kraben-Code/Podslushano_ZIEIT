@@ -276,7 +276,7 @@ create table if not exists public.community_posts (
   content varchar(3000) not null check (length(trim(content)) >= 5),
   is_anonymous boolean not null default false,
   moderation_status varchar(16) not null default 'pending'
-    check (moderation_status in ('pending', 'approved', 'rejected')),
+    check (moderation_status in ('pending', 'approved', 'rejected', 'publishing')),
   source varchar(16) not null default 'site'
     check (source in ('site', 'telegram')),
   moderation_notified_at timestamptz,
@@ -402,7 +402,10 @@ create policy "Comments on visible posts are readable"
   on public.community_post_comments for select to anon, authenticated
   using (exists (
     select 1 from public.community_posts p
-    where p.id = post_id and p.moderation_status = 'approved'
+    where p.id = post_id and (
+      p.moderation_status = 'approved'
+      or public.has_community_role('moderator')
+    )
   ));
 drop policy if exists "Users comment on approved posts" on public.community_post_comments;
 create policy "Users comment on approved posts"

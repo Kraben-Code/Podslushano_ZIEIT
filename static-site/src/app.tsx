@@ -1,6 +1,7 @@
 import {
   ArrowUpRight,
   Bell,
+  CalendarDays,
   Heart,
   LogIn,
   LogOut,
@@ -16,6 +17,7 @@ import {
   X,
 } from "lucide-react";
 import {
+  forwardRef,
   type FormEvent,
   type KeyboardEvent,
   useCallback,
@@ -36,13 +38,31 @@ import {
   supabase,
 } from "./lib/backend";
 
-type Page = "home" | "overheard" | "chat" | "marketplace" | "channel" | "profile" | "moderation";
+type Page = "home" | "overheard" | "chat" | "marketplace" | "channel" | "schedule" | "profile" | "moderation";
 type Language = "ru" | "uk" | "en";
 type Theme = "light" | "dark";
 type Author = Pick<Profile, "id" | "username" | "display_name" | "role">;
 type CommentRow = { id: string; author_id: string; content: string; created_at: string };
 type ReviewListing = Pick<Listing, "id" | "author_id" | "title" | "description" | "price" | "category" | "status" | "created_at">;
 type PostDraft = { content: string; category: string; isAnonymous: boolean };
+type ScheduleLesson = {
+  date: string;
+  day: string;
+  week_start: string;
+  number: number;
+  time: string;
+  subject: string;
+  details: string[];
+};
+type ScheduleGroup = {
+  id: string;
+  course: string;
+  name: string;
+  label: string;
+  source_url: string;
+  lessons: ScheduleLesson[];
+};
+type ScheduleData = { updated_at: string; source_page: string; groups: ScheduleGroup[] };
 type AuthMode = "sign-in" | "sign-up";
 
 const navigation: { id: Page; label: string; icon: typeof UsersRound }[] = [
@@ -51,6 +71,7 @@ const navigation: { id: Page; label: string; icon: typeof UsersRound }[] = [
   { id: "chat", label: "Чат", icon: MessageCircle },
   { id: "marketplace", label: "Барахолка", icon: Store },
   { id: "channel", label: "Канал", icon: ArrowUpRight },
+  { id: "schedule", label: "Расписание", icon: CalendarDays },
   { id: "profile", label: "Профиль", icon: UserRound },
   { id: "moderation", label: "Модерация", icon: ShieldCheck },
 ];
@@ -68,6 +89,7 @@ const pageHeadings: Record<Page, { title: string; description: string }> = {
   chat: { title: "Студенческий чат", description: "Живое общение без автоответов и фальшивых пользователей." },
   marketplace: { title: "Барахолка", description: "Покупай, продавай и отдавай вещи студентам." },
   channel: { title: "Канал сообщества", description: "Публикации, прошедшие модерацию и отправленные в Telegram." },
+  schedule: { title: "Расписание занятий", description: "Актуальное расписание с официального сайта ЗИЕИТ." },
   profile: { title: "Мой профиль", description: "Настрой имя, описание и ссылку на аватар." },
   moderation: { title: "Панель команды", description: "Модерация публикаций и управление ролями участников." },
 };
@@ -79,6 +101,7 @@ const pageHeadingsByLanguage: Record<Language, Record<Page, { title: string; des
     chat: { title: "Студентський чат", description: "Живе спілкування без автоматичних відповідей." },
     marketplace: { title: "Барахолка", description: "Купуй, продавай і віддавай речі студентам." },
     channel: { title: "Канал спільноти", description: "Публікації після модерації та дописи з Telegram." },
+    schedule: { title: "Розклад занять", description: "Актуальний розклад з офіційного сайту ЗІЕІТ." },
     profile: { title: "Мій профіль", description: "Налаштуй ім’я, опис і посилання на аватар." },
     moderation: { title: "Панель команди", description: "Модерація публікацій та керування ролями учасників." },
   },
@@ -88,6 +111,7 @@ const pageHeadingsByLanguage: Record<Language, Record<Page, { title: string; des
     chat: { title: "Student chat", description: "Live conversation with real community members." },
     marketplace: { title: "Marketplace", description: "Buy, sell, and give items to other students." },
     channel: { title: "Community channel", description: "Moderated posts shared with the Telegram channel." },
+    schedule: { title: "Class schedule", description: "The latest timetable from the official ZIEIT website." },
     profile: { title: "My profile", description: "Update your display name, bio, and avatar link." },
     moderation: { title: "Team panel", description: "Review submissions and manage community roles." },
   },
@@ -318,7 +342,7 @@ export function App() {
       setAuthMode("sign-in");
       return;
     }
-    const form = new FormData(formElement);
+    const form = new FormData(event.currentTarget);
     const content = String(form.get("content") ?? "").trim();
     if (content.length < 5) {
       setError("Напишите немного подробнее — минимум 5 символов.");
@@ -358,10 +382,11 @@ export function App() {
       setBusy(false);
     }
 
-    function cancelPostPreview() {
-      postComposerRef.current?.reset();
-      setPostPreview(null);
-    }
+  }
+
+  function cancelPostPreview() {
+    postComposerRef.current?.reset();
+    setPostPreview(null);
   }
 
   async function submitListing(event: FormEvent<HTMLFormElement>) {
@@ -537,7 +562,7 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#feed" onClick={() => navigate("feed")}>
+        <a className="brand" href="#home" onClick={() => navigate("home")}>
           <span className="brand-mark">П</span>
           <span>Подслушано<small>ЗИЕИТ · сообщество</small></span>
         </a>
@@ -596,8 +621,12 @@ export function App() {
         </header>
 
         <section className="page-heading">
-          <div><span className="eyebrow">{page === "overheard" ? "АНОНИМНЫЕ ИСТОРИИ" : "СТУДЕНЧЕСКАЯ СРЕДА"}</span><h1>{heading.title}</h1><p>{heading.description}</p></div>
-          {(page === "feed" || page === "overheard") && <button className="primary-button" type="button" onClick={() => document.getElementById("post-content")?.focus()}><Plus size={17} /> Предложить пост</button>}
+          <div><span className="eyebrow">{page === "overheard" ? "ПУБЛИКАЦИИ СТУДЕНТОВ" : "СТУДЕНЧЕСКАЯ СРЕДА"}</span><h1>{heading.title}</h1><p>{heading.description}</p></div>
+          {page === "overheard" && <button className="primary-button" type="button" onClick={() => {
+            const composer = document.getElementById("post-content");
+            composer?.scrollIntoView({ behavior: "smooth", block: "center" });
+            composer?.focus({ preventScroll: true });
+          }}><Plus size={17} /> Предложить пост</button>}
         </section>
 
         {!isBackendConfigured && (
@@ -610,17 +639,18 @@ export function App() {
 
         <div className="content-grid">
           <div className="primary-column">
-            {(page === "feed" || page === "overheard") && (
+            {page === "home" && <HomePanel onNavigate={navigate} />}
+            {page === "overheard" && (
               <>
-                <PostComposer page={page} busy={busy} signedIn={Boolean(user)} onSubmit={submitPost} onNeedAuth={() => setAuthMode("sign-in")} />
-                <div className="section-title"><h2>{page === "overheard" ? "Истории студентов" : "Последние публикации"}</h2><span>{posts.length} публикаций</span></div>
+                <PostComposer ref={postComposerRef} page={page} busy={busy} signedIn={Boolean(user)} onSubmit={previewPost} onNeedAuth={() => setAuthMode("sign-in")} />
+                <div className="section-title"><h2>Публикации студентов</h2><span>{posts.length} публикаций</span></div>
                 <div className="card-list">
                   {posts.map((post) => <PostCard key={post.id} post={post} author={authors.get(post.author_id)} user={user} isOwner={profile?.role === "owner"} onOwnerDelete={(id) => void ownerDelete("owner_delete_community_post", id)} onNeedAuth={() => setAuthMode("sign-in")} />)}
-                  {posts.length === 0 && <EmptyCard title="Пока нет публикаций" text="Публикации появятся здесь после одобрения модератора." />}
+                  {posts.length === 0 && <EmptyCard title="Пока нет публикаций" text="Публикации появятся здесь после проверки модераторами." />}
                 </div>
               </>
             )}
-            {page === "chat" && <ChatPanel rooms={rooms} user={user} role={profile?.role ?? "user"} onNeedAuth={() => setAuthMode("sign-in")} onOwnerDelete={(id) => void ownerDelete("owner_delete_chat_message", id)} />}
+            {page === "chat" && <ChatPanel rooms={rooms} user={user} role={profile?.role ?? "user"} onNeedAuth={() => setAuthMode("sign-in")} />}
             {page === "marketplace" && (
               <>
                 <ListingComposer busy={busy} signedIn={Boolean(user)} onSubmit={submitListing} onNeedAuth={() => setAuthMode("sign-in")} />
@@ -638,6 +668,7 @@ export function App() {
                 <a className="telegram-banner" href="https://t.me/testerrnet" target="_blank" rel="noreferrer"><span><strong>Канал в Telegram</strong><small>Публикации сайта и Telegram после модерации</small></span><ArrowUpRight /></a>
               </div>
             )}
+            {page === "schedule" && <SchedulePanel />}
             {page === "profile" && (
               user && profile ? (
                 <form className="surface profile-form" onSubmit={(event) => void updateProfile(event)}>
@@ -681,7 +712,155 @@ export function App() {
       </main>
 
       {authMode && <AuthDialog mode={authMode} onClose={() => setAuthMode(null)} onModeChange={setAuthMode} onNotice={setNotice} onError={setError} />}
+      {postPreview && <PostPreviewDialog draft={postPreview} busy={busy} onEdit={() => setPostPreview(null)} onCancel={cancelPostPreview} onConfirm={() => void publishPost()} />}
     </div>
+  );
+}
+
+function HomePanel({ onNavigate }: { onNavigate: (page: Page) => void }) {
+  const sections: { title: string; description: string; page: Page; icon: typeof UsersRound; action: string }[] = [
+    { title: "Подслушано", description: "Истории и посты студентов — с именем или анонимно, после проверки.", page: "overheard", icon: Bell, action: "Открыть публикации" },
+    { title: "Чат", description: "Общайся с другими студентами в комнатах в реальном времени.", page: "chat", icon: MessageCircle, action: "Перейти в чат" },
+    { title: "Барахолка", description: "Покупай, продавай и отдавай вещи студентам.", page: "marketplace", icon: Store, action: "Смотреть объявления" },
+    { title: "Канал", description: "Читай публикации сообщества, прошедшие модерацию.", page: "channel", icon: ArrowUpRight, action: "Открыть канал" },
+  ];
+  return (
+    <div className="home-panel">
+      <section className="surface home-hero">
+        <span className="welcome-icon">З</span>
+        <span className="eyebrow">СТУДЕНЧЕСКОЕ СООБЩЕСТВО</span>
+        <h2>Всё важное о жизни ЗИЕИТ — в одном месте</h2>
+        <p>Публикуй истории, общайся, находи полезные вещи и следи за новостями университета.</p>
+        <button className="primary-button" type="button" onClick={() => onNavigate("overheard")}><Plus size={16} /> Предложить пост</button>
+      </section>
+      <div className="home-section-grid">
+        {sections.map(({ title, description, page, icon: Icon, action }) => (
+          <button className="surface home-section-card" key={page} type="button" onClick={() => onNavigate(page)}>
+            <Icon size={20} />
+            <h3>{title}</h3>
+            <p>{description}</p>
+            <span>{action} <ArrowUpRight size={14} /></span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PostPreviewDialog({
+  draft,
+  busy,
+  onEdit,
+  onCancel,
+  onConfirm,
+}: {
+  draft: PostDraft;
+  busy: boolean;
+  onEdit: () => void;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section className="surface auth-modal post-preview-modal" role="dialog" aria-modal="true" aria-labelledby="post-preview-title">
+        <span className="eyebrow">ПРОВЕРЬ ПУБЛИКАЦИЮ</span>
+        <h2 id="post-preview-title">Предпросмотр поста</h2>
+        <div className="post-preview-meta"><span className="category-pill">{draft.category}</span><span className="muted small">{draft.isAnonymous ? "Анонимно" : "Публично"}</span></div>
+        <p className="post-content">{draft.content}</p>
+        <p className="muted small">После отправки пост попадёт к модераторам. В публикации не будет отметки о том, создана ли она на сайте или в Telegram.</p>
+        <div className="preview-actions">
+          <button className="subtle-button" type="button" disabled={busy} onClick={onEdit}>Редактировать</button>
+          <button className="subtle-button" type="button" disabled={busy} onClick={onCancel}>Отменить</button>
+          <button className="primary-button" type="button" disabled={busy} onClick={onConfirm}>{busy ? "Отправляем…" : "Отправить на модерацию"}</button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function SchedulePanel() {
+  const [schedule, setSchedule] = useState<ScheduleData | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void fetch(`${import.meta.env.BASE_URL}schedule.json`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Не удалось загрузить расписание.");
+        return response.json() as Promise<ScheduleData>;
+      })
+      .then((data) => {
+        if (!active) return;
+        setSchedule(data);
+        const preferred = data.groups.find((group) =>
+          group.course.includes("коледж · 1 курс") && group.name.toLocaleLowerCase("uk").includes("іпз"),
+        );
+        setSelectedGroupId(preferred?.id ?? data.groups[0]?.id ?? "");
+      })
+      .catch((loadError: unknown) => {
+        if (active) setError(loadError instanceof Error ? loadError.message : "Не удалось загрузить расписание.");
+      });
+    return () => { active = false; };
+  }, []);
+
+  const group = schedule?.groups.find((item) => item.id === selectedGroupId);
+  const weeks = [...new Set(group?.lessons.map((lesson) => lesson.week_start) ?? [])].sort();
+  useEffect(() => {
+    if (!weeks.length) {
+      setSelectedWeek("");
+      return;
+    }
+    if (weeks.includes(selectedWeek)) return;
+    const today = new Date();
+    const monday = new Date(today);
+    monday.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    const mondayIso = monday.toISOString().slice(0, 10);
+    setSelectedWeek(weeks.find((week) => week >= mondayIso) ?? weeks[weeks.length - 1]);
+  }, [selectedGroupId, selectedWeek, schedule]);
+
+  const weekIndex = weeks.indexOf(selectedWeek);
+  const weekLessons = (group?.lessons ?? []).filter((lesson) => lesson.week_start === selectedWeek);
+  const days = [...new Set(weekLessons.map((lesson) => lesson.date))].sort();
+  const formatDate = (iso: string, options: Intl.DateTimeFormatOptions) =>
+    new Intl.DateTimeFormat("ru-RU", options).format(new Date(`${iso}T12:00:00`));
+
+  return (
+    <section className="schedule-panel">
+      <div className="surface schedule-controls">
+        <label className="field">
+          <span>Группа или курс</span>
+          <select value={selectedGroupId} onChange={(event) => { setSelectedGroupId(event.target.value); setSelectedWeek(""); }}>
+            {(schedule?.groups ?? []).map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+          </select>
+        </label>
+        <div className="schedule-week-controls">
+          <button className="icon-button" type="button" aria-label="Предыдущая неделя" disabled={weekIndex <= 0} onClick={() => setSelectedWeek(weeks[weekIndex - 1])}>←</button>
+          <strong>{selectedWeek ? `${formatDate(selectedWeek, { day: "numeric", month: "short" })} — ${formatDate(new Date(new Date(`${selectedWeek}T12:00:00`).getTime() + 6 * 86400000).toISOString().slice(0, 10), { day: "numeric", month: "short" })}` : "Неделя не выбрана"}</strong>
+          <button className="icon-button" type="button" aria-label="Следующая неделя" disabled={weekIndex < 0 || weekIndex >= weeks.length - 1} onClick={() => setSelectedWeek(weeks[weekIndex + 1])}>→</button>
+        </div>
+      </div>
+
+      {error && <div className="notice error" role="alert">{error}</div>}
+      {schedule?.groups.length === 0 && <EmptyCard title="Расписание ещё загружается" text="Попробуйте обновить страницу позже." />}
+      {group && days.map((date) => (
+        <section className="surface schedule-day" key={date}>
+          <header><h2>{formatDate(date, { weekday: "long", day: "numeric", month: "long" })}</h2></header>
+          {weekLessons.filter((lesson) => lesson.date === date).sort((a, b) => a.number - b.number).map((lesson) => (
+            <article className="schedule-lesson" key={`${lesson.date}-${lesson.number}`}>
+              <span className="schedule-time"><strong>{lesson.number} пара</strong><small>{lesson.time}</small></span>
+              <div><strong>{lesson.subject}</strong>{lesson.details.map((detail) => <small key={detail}>{detail}</small>)}</div>
+            </article>
+          ))}
+        </section>
+      ))}
+      {group && !days.length && <EmptyCard title="На эту неделю занятий нет" text="Выберите соседнюю неделю или другую группу." />}
+      <footer className="schedule-source">
+        {schedule?.updated_at && <span>Обновлено: {new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" }).format(new Date(schedule.updated_at))}</span>}
+        <a href={schedule?.source_page ?? "https://www.zieit.edu.ua/?page_id=219"} target="_blank" rel="noreferrer">Официальный источник расписания <ArrowUpRight size={14} /></a>
+      </footer>
+    </section>
   );
 }
 
@@ -725,7 +904,7 @@ function ModerationPanel({
         <div className="card-list">
           {posts.map((post) => (
             <article className="surface moderation-card" key={post.id}>
-              <div className="composer-controls"><span className="category-pill">{post.category}</span><span className="muted small">{post.source === "telegram" ? "Из Telegram" : "С сайта"} · {formatTime(post.created_at)}</span></div>
+              <div className="composer-controls"><span className="category-pill">{post.category}</span><span className="muted small">{formatTime(post.created_at)}</span></div>
               <p>{post.content}</p>
               <small className="muted">{post.is_anonymous ? "Анонимная публикация" : `Автор: ${post.author_id}`}</small>
               <div className="moderation-actions">
@@ -784,20 +963,23 @@ function ModerationPanel({
   );
 }
 
-function PostComposer({ page, busy, signedIn, onSubmit, onNeedAuth }: { page: Page; busy: boolean; signedIn: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onNeedAuth: () => void }) {
-  return (
-    <form className="surface composer" onSubmit={onSubmit}>
+const PostComposer = forwardRef<HTMLFormElement, { page: Page; busy: boolean; signedIn: boolean; onSubmit: (event: FormEvent<HTMLFormElement>) => void; onNeedAuth: () => void }>(
+  function PostComposer({ page, busy, signedIn, onSubmit, onNeedAuth }, ref) {
+    return (
+    <form id="post-composer" ref={ref} className="surface composer" onSubmit={onSubmit}>
       <div className="composer-title"><span className="avatar">С</span><strong>Есть чем поделиться?</strong></div>
       <textarea id="post-content" name="content" maxLength={3000} minLength={5} rows={3} placeholder={page === "overheard" ? "Расскажите историю. Можно анонимно…" : "Напишите пост для сообщества…"} required />
       <div className="composer-controls">
-        {page === "overheard" ? <label className="check-label"><input type="checkbox" name="anonymous" defaultChecked /> Опубликовать анонимно</label> : <select name="category" aria-label="Категория"><option value="general">Общее</option><option value="study">Учёба</option><option value="event">События</option><option value="question">Вопрос</option></select>}
+        <select name="category" aria-label="Категория"><option value="overheard">Подслушано</option><option value="general">Общее</option><option value="study">Учёба</option><option value="event">События</option><option value="question">Вопрос</option></select>
+        <label className="check-label"><input type="checkbox" name="anonymous" /> Опубликовать анонимно</label>
         <span className="muted small">Публикация появится после модерации</span>
-        <button className="primary-button" type="submit" disabled={busy}><Send size={15} />{busy ? "Отправляем…" : "На модерацию"}</button>
+        <button className="primary-button" type="submit" disabled={busy}><Send size={15} /> Предпросмотр</button>
       </div>
       {!signedIn && <button className="composer-auth-hint" type="button" onClick={onNeedAuth}>Нужно войти, чтобы отправить публикацию</button>}
     </form>
-  );
-}
+    );
+  },
+);
 
 function PostCard({ post, author, user, isOwner, onOwnerDelete, onNeedAuth }: { post: CommunityPost; author?: Author; user: User | null; isOwner: boolean; onOwnerDelete: (id: string) => void; onNeedAuth: () => void }) {
   const [liked, setLiked] = useState(false);
@@ -907,7 +1089,7 @@ function PostCard({ post, author, user, isOwner, onOwnerDelete, onNeedAuth }: { 
     <article className="surface post-card">
       <header className="post-meta">
         <span className="avatar">{post.is_anonymous ? "?" : (author?.display_name.slice(0, 1).toUpperCase() ?? "С")}</span>
-        <span className="post-author"><strong>{post.is_anonymous ? "Анонимный студент" : author?.display_name ?? "Студент"}</strong>{!post.is_anonymous && author && <RoleBadge role={author.role} />}<small>{formatTime(post.created_at)} · {post.source === "telegram" ? "Telegram" : "Сайт"}</small></span>
+        <span className="post-author"><strong>{post.is_anonymous ? "Анонимный студент" : author?.display_name ?? "Студент"}</strong>{!post.is_anonymous && author && <RoleBadge role={author.role} />}<small>{formatTime(post.created_at)}</small></span>
         <span className="category-pill">{post.category === "overheard" ? "Подслушано" : post.category}</span>
       </header>
       <p className="post-content">{post.content}</p>
