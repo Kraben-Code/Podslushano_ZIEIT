@@ -11,4 +11,6 @@ export type FeedPost = {
   comments: number;
   anonymous?: boolean;
   accent?: string;
+  source?: "site" | "telegram";
+  moderationStatus?: "approved" | "pending" | "rejected";
 };

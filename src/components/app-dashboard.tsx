@@ -28,6 +28,49 @@ import type { FeedPost } from "@/lib/types";
 const filters = ["Усі", "Підслухано", "Навчання", "Питання"];
 const sortOptions = ["Найновіші", "Популярні", "Обговорюють"] as const;
 type SortOption = (typeof sortOptions)[number];
+type Language = "uk" | "ru" | "en";
+
+const translations = {
+  uk: {
+    campus: "ТВІЙ КАМПУС, ТВОЇ ЛЮДИ",
+    navFeed: "Стрічка",
+    navCommunity: "Спільнота",
+    navAbout: "Про проєкт",
+    welcome: "Привіт, студенте 👋",
+    welcomeCopy: "Тут починається все, про що говорить твій кампус.",
+    communityTitle: "Твій кампус. Твоя історія.",
+    communityDescription: "Знайомся, ділися думками й залишайся на зв’язку з тими, хто поруч.",
+    join: "Приєднатися до спільноти",
+    feedTitle: "Стрічка спільноти",
+    feedSubtitle: "Думки, новини й маленькі моменти з життя кампусу.",
+  },
+  ru: {
+    campus: "ТВОЙ КАМПУС, ТВОИ ЛЮДИ",
+    navFeed: "Лента",
+    navCommunity: "Сообщество",
+    navAbout: "О проекте",
+    welcome: "Привет, студент 👋",
+    welcomeCopy: "Здесь начинается всё, о чём говорит твой кампус.",
+    communityTitle: "Твой кампус. Твоя история.",
+    communityDescription: "Знакомься, делись мыслями и оставайся на связи с теми, кто рядом.",
+    join: "Присоединиться к сообществу",
+    feedTitle: "Лента сообщества",
+    feedSubtitle: "Мысли, новости и мелочи студенческой жизни.",
+  },
+  en: {
+    campus: "YOUR CAMPUS, YOUR PEOPLE",
+    navFeed: "Feed",
+    navCommunity: "Community",
+    navAbout: "About",
+    welcome: "Hello, student 👋",
+    welcomeCopy: "This is where your campus story begins.",
+    communityTitle: "Your campus. Your story.",
+    communityDescription: "Meet people, share ideas and stay connected to the community around you.",
+    join: "Join the community",
+    feedTitle: "Community feed",
+    feedSubtitle: "Thoughts, news and everyday moments from campus life.",
+  },
+} as const;
 
 export function AppDashboard({
   demoMode,
@@ -42,7 +85,21 @@ export function AppDashboard({
   const [likedPosts, setLikedPosts] = useState<string[]>([]);
   const [savedPosts, setSavedPosts] = useState<string[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [language, setLanguage] = useState<Language>("ru");
   const searchInput = useRef<HTMLInputElement>(null);
+  const text = translations[language];
+
+  useEffect(() => {
+    const savedLanguage = window.localStorage.getItem("zieit-language") as Language | null;
+    if (savedLanguage && savedLanguage in translations) {
+      setLanguage(savedLanguage);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    window.localStorage.setItem("zieit-language", language);
+  }, [language]);
 
   useEffect(() => {
     function focusSearch(event: KeyboardEvent) {
@@ -97,20 +154,20 @@ export function AppDashboard({
           </button>
         </div>
 
-        <div className="campus-label">ТВІЙ КАМПУС, ТВОЇ ЛЮДИ</div>
+        <div className="campus-label">{text.campus}</div>
         <nav aria-label="Головна навігація" className="main-nav">
           <a className="nav-link nav-link-active" href="#feed">
             <Compass size={18} />
-            <span>Стрічка</span>
+            <span>{text.navFeed}</span>
             <span className="nav-pulse" />
           </a>
           <a className="nav-link" href="#community">
             <UsersRound size={18} />
-            <span>Спільнота</span>
+            <span>{text.navCommunity}</span>
           </a>
           <a className="nav-link" href="#about">
             <CircleHelp size={18} />
-            <span>Про проєкт</span>
+            <span>{text.navAbout}</span>
           </a>
         </nav>
 
@@ -167,6 +224,18 @@ export function AppDashboard({
               />
               <kbd>⌘ K</kbd>
             </label>
+            <label className="language-switcher">
+              <span className="sr-only">Вибір мови</span>
+              <select
+                aria-label="Вибір мови інтерфейсу"
+                onChange={(event) => setLanguage(event.target.value as Language)}
+                value={language}
+              >
+                <option value="uk">Українська</option>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
+            </label>
             <button
               aria-label="Змінити тему"
               className="icon-button theme-button"
@@ -191,10 +260,8 @@ export function AppDashboard({
                   <span className="eyebrow-dot" />
                   РАДІ БАЧИТИ ТЕБЕ
                 </div>
-                <h1 id="feed-title">Привіт, студенте 👋</h1>
-                <p className="welcome-copy">
-                  Тут починається все, про що говорить твій кампус.
-                </p>
+                <h1 id="feed-title">{text.welcome}</h1>
+                <p className="welcome-copy">{text.welcomeCopy}</p>
               </div>
               <div className="welcome-sticker" aria-hidden="true">
                 <span>тут</span>
@@ -208,13 +275,10 @@ export function AppDashboard({
               <div className="banner-sparkle sparkle-two">✳</div>
               <div className="banner-content">
                 <span className="banner-kicker">ПРОСТІР ДЛЯ ТВОГО ГОЛОСУ</span>
-                <h2>Твій кампус. Твоя історія.</h2>
-                <p>
-                  Знайомся, ділися думками й залишайся на зв’язку з тими, хто
-                  поруч.
-                </p>
+                <h2>{text.communityTitle}</h2>
+                <p>{text.communityDescription}</p>
                 <Link className="banner-link" href="/login">
-                  Приєднатися до спільноти <ArrowRight size={16} />
+                  {text.join} <ArrowRight size={16} />
                 </Link>
               </div>
               <div className="banner-art" aria-hidden="true">
@@ -232,8 +296,8 @@ export function AppDashboard({
 
             <div className="section-heading">
               <div>
-                <h2>Стрічка спільноти</h2>
-                <p>Думки, новини й маленькі моменти з життя кампусу.</p>
+                <h2>{text.feedTitle}</h2>
+                <p>{text.feedSubtitle}</p>
               </div>
               <Button
                 aria-label="Змінити сортування"

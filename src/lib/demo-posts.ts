@@ -13,6 +13,8 @@ export const demoPosts: FeedPost[] = [
     likes: 24,
     comments: 8,
     anonymous: true,
+    source: "telegram",
+    moderationStatus: "approved",
   },
   {
     id: "demo-study",
@@ -27,6 +29,8 @@ export const demoPosts: FeedPost[] = [
     likes: 18,
     comments: 5,
     accent: "notes",
+    source: "site",
+    moderationStatus: "approved",
   },
   {
     id: "demo-question",
@@ -40,5 +44,7 @@ export const demoPosts: FeedPost[] = [
       "Порадьте затишне місце поруч із кампусом, де можна попрацювати з ноутбуком і випити щось смачне?",
     likes: 11,
     comments: 12,
+    source: "telegram",
+    moderationStatus: "pending",
   },
 ];

@@ -194,8 +194,8 @@ export function TeamManager({ actorId }: { actorId: string }) {
       setError("Не вдалося завантажити команду. Перевір з’єднання.");
     } finally {
       if (!signal?.aborted) setLoading(false);
-    }, []);
-  }
+    }
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();

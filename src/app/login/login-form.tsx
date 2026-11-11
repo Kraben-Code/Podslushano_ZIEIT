@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowRight, Eye, EyeOff, KeyRound, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 
 export function LoginForm({ databaseConfigured }: { databaseConfigured: boolean }) {
@@ -11,6 +11,19 @@ export function LoginForm({ databaseConfigured }: { databaseConfigured: boolean 
   const [passwordVisible, setPasswordVisible] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  const [language, setLanguage] = useState<"uk" | "ru" | "en">("ru");
+
+  useEffect(() => {
+    const savedLanguage = window.localStorage.getItem("zieit-language") as "uk" | "ru" | "en" | null;
+    if (savedLanguage && ["uk", "ru", "en"].includes(savedLanguage)) {
+      setLanguage(savedLanguage);
+    }
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.lang = language;
+    window.localStorage.setItem("zieit-language", language);
+  }, [language]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -46,6 +59,19 @@ export function LoginForm({ databaseConfigured }: { databaseConfigured: boolean 
 
   return (
     <form className="login-form" onSubmit={handleSubmit}>
+      <label className="form-field language-field">
+        <span>Язык интерфейса</span>
+        <select
+          aria-label="Вибір мови інтерфейсу"
+          onChange={(event) => setLanguage(event.target.value as "uk" | "ru" | "en")}
+          value={language}
+        >
+          <option value="uk">Українська</option>
+          <option value="ru">Русский</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+
       <label className="form-field">
         <span>Логін</span>
         <span className="form-input-wrap">
