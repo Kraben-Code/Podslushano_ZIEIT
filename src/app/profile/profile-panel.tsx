@@ -4,6 +4,7 @@ import { ArrowLeft, LogOut, ShieldCheck, UserRound } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { ProfileCustomizer } from "@/components/profile-customizer";
 import { Button } from "@/components/ui/button";
 import type { CurrentUser } from "@/lib/auth/session";
 
@@ -101,10 +102,12 @@ export function ProfilePanel({
           <div className="profile-note">
             <span>✳</span>
             <p>
-              Профіль — це твоя візитівка у спільноті. Налаштування та
-              публікації з’являться на наступних етапах розвитку платформи.
+              Профіль — це твоя візитівка у спільноті. Тут можна змінити аватар,
+              обкладинку, опис, інтереси та налаштування приватності.
             </p>
           </div>
+
+          <ProfileCustomizer initialName={user.displayName} initialHandle={user.username} />
 
           {error && (
             <p aria-live="polite" className="form-error" role="alert">

@@ -157,15 +157,27 @@ export function AppDashboard({
 
         <div className="campus-label">{text.campus}</div>
         <nav aria-label="Головна навігація" className="main-nav">
-          <a className="nav-link nav-link-active" href="#feed">
+          <Link className="nav-link nav-link-active" href="/feed">
             <Compass size={18} />
             <span>{text.navFeed}</span>
             <span className="nav-pulse" />
-          </a>
-          <a className="nav-link" href="#community">
+          </Link>
+          <Link className="nav-link" href="/chat">
+            <MessageCircle size={18} />
+            <span>Чат</span>
+          </Link>
+          <Link className="nav-link" href="/marketplace">
+            <ArrowDownUp size={18} />
+            <span>Барахолка</span>
+          </Link>
+          <Link className="nav-link" href="/channel">
+            <Bell size={18} />
+            <span>Канал</span>
+          </Link>
+          <Link className="nav-link" href="/profile">
             <UsersRound size={18} />
-            <span>{text.navCommunity}</span>
-          </a>
+            <span>Профіль</span>
+          </Link>
           <a className="nav-link" href="#about">
             <CircleHelp size={18} />
             <span>{text.navAbout}</span>
