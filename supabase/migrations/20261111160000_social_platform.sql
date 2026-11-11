@@ -270,7 +270,8 @@ grant execute on function public.owner_delete_comment(uuid) to authenticated;
 
 create table if not exists public.community_posts (
   id uuid primary key default gen_random_uuid(),
-  author_id uuid not null references auth.users(id) on delete cascade,
+  author_id uuid references auth.users(id) on delete set null,
+  author_label varchar(80),
   category varchar(24) not null default 'general'
     check (category in ('general', 'overheard', 'study', 'event', 'question')),
   content varchar(3000) not null check (length(trim(content)) >= 5),

@@ -28,11 +28,12 @@ export type CommunityRole = "user" | "moderator" | "admin" | "owner";
 
 export type CommunityPost = {
   id: string;
-  author_id: string;
+  author_id: string | null;
+  author_label: string | null;
   category: string;
   content: string;
   is_anonymous: boolean;
-  moderation_status: "pending" | "approved" | "rejected";
+  moderation_status: "pending" | "approved" | "rejected" | "publishing";
   source: "site" | "telegram";
   published_to_channel: boolean;
   created_at: string;

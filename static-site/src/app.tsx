@@ -234,7 +234,7 @@ export function App() {
     setError("");
     let postsQuery = supabase
       .from("community_posts")
-      .select("id, author_id, category, content, is_anonymous, moderation_status, source, published_to_channel, created_at")
+      .select("id, author_id, author_label, category, content, is_anonymous, moderation_status, source, published_to_channel, created_at")
       .order("created_at", { ascending: false })
       .limit(150);
     let listingsQuery = supabase
@@ -271,7 +271,7 @@ export function App() {
     setError("");
     let query = supabase
       .from("community_posts")
-      .select("id, author_id, category, content, is_anonymous, moderation_status, source, published_to_channel, created_at")
+      .select("id, author_id, author_label, category, content, is_anonymous, moderation_status, source, published_to_channel, created_at")
       .eq("moderation_status", "approved")
       .order("created_at", { ascending: false })
       .limit(60);
@@ -287,7 +287,7 @@ export function App() {
     const rows = (data ?? []) as CommunityPost[];
     setPosts(rows);
     try {
-      setAuthors(await getAuthors(rows.map((post) => post.author_id)));
+      setAuthors(await getAuthors(rows.map((post) => post.author_id).filter((id): id is string => Boolean(id))));
     } catch (authorError) {
       setError(authorError instanceof Error ? authorError.message : "Не удалось загрузить авторов.");
     }
@@ -906,7 +906,7 @@ function ModerationPanel({
             <article className="surface moderation-card" key={post.id}>
               <div className="composer-controls"><span className="category-pill">{post.category}</span><span className="muted small">{formatTime(post.created_at)}</span></div>
               <p>{post.content}</p>
-              <small className="muted">{post.is_anonymous ? "Анонимная публикация" : `Автор: ${post.author_id}`}</small>
+              <small className="muted">{post.is_anonymous ? "Анонимная публикация" : `Автор: ${post.author_label ?? post.author_id ?? "не указан"}`}</small>
               <div className="moderation-actions">
                 <span className="pending-pill">{post.moderation_status === "pending" ? "На проверке" : post.moderation_status === "approved" ? "Одобрен" : "Отклонён"}</span>
                 {post.moderation_status === "pending" && <><button className="primary-button" disabled={busy} type="button" onClick={() => onReviewPost(post.id, "approved")}>Одобрить</button><button className="subtle-button" disabled={busy} type="button" onClick={() => onReviewPost(post.id, "rejected")}>Отклонить</button></>}
@@ -1089,7 +1089,7 @@ function PostCard({ post, author, user, isOwner, onOwnerDelete, onNeedAuth }: { 
     <article className="surface post-card">
       <header className="post-meta">
         <span className="avatar">{post.is_anonymous ? "?" : (author?.display_name.slice(0, 1).toUpperCase() ?? "С")}</span>
-        <span className="post-author"><strong>{post.is_anonymous ? "Анонимный студент" : author?.display_name ?? "Студент"}</strong>{!post.is_anonymous && author && <RoleBadge role={author.role} />}<small>{formatTime(post.created_at)}</small></span>
+        <span className="post-author"><strong>{post.is_anonymous ? "Анонимный студент" : author?.display_name ?? post.author_label ?? "Студент"}</strong>{!post.is_anonymous && author && <RoleBadge role={author.role} />}<small>{formatTime(post.created_at)}</small></span>
         <span className="category-pill">{post.category === "overheard" ? "Подслушано" : post.category}</span>
       </header>
       <p className="post-content">{post.content}</p>

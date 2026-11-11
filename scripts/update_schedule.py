@@ -107,7 +107,9 @@ def parse_workbook(content, course, filename):
         by_group = {}
         for lesson in lessons:
             by_group.setdefault(lesson["group"], []).append(lesson)
-        for group_name, entries in by_group.items():
+        group_names = [name for name in headers[4:] if name]
+        for group_name in group_names:
+            entries = by_group.get(group_name, [])
             groups.append({
                 "id": f"{filename}:{sheet.name}:{group_name}",
                 "course": course,
