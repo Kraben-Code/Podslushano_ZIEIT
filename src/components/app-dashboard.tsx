@@ -79,6 +79,7 @@ export function AppDashboard({
   demoMode: boolean;
   posts: FeedPost[];
 }) {
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
   const [activeFilter, setActiveFilter] = useState("Усі");
   const [sortBy, setSortBy] = useState<SortOption>("Найновіші");
   const [search, setSearch] = useState("");
@@ -277,9 +278,44 @@ export function AppDashboard({
                 <span className="banner-kicker">ПРОСТІР ДЛЯ ТВОГО ГОЛОСУ</span>
                 <h2>{text.communityTitle}</h2>
                 <p>{text.communityDescription}</p>
-                <Link className="banner-link" href="/login">
-                  {text.join} <ArrowRight size={16} />
-                </Link>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, marginTop: 18, maxWidth: 320 }}>
+                  <Link
+                    href="/feed"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      width: "100%",
+                      padding: "16px 20px",
+                      borderRadius: 14,
+                      background: "linear-gradient(135deg, #8b5cf6 0%, #2563eb 100%)",
+                      color: "#fff",
+                      textDecoration: "none",
+                      fontWeight: 700,
+                    }}
+                  >
+                    Предложить пост <ArrowRight size={16} />
+                  </Link>
+                  <Link
+                    href="/login"
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      width: "100%",
+                      padding: "12px 18px",
+                      borderRadius: 12,
+                      border: "1px solid rgba(255,255,255,0.35)",
+                      color: "#fff",
+                      textDecoration: "none",
+                      background: "rgba(15, 23, 42, 0.18)",
+                    }}
+                  >
+                    Регистрация через Telegram
+                  </Link>
+                </div>
               </div>
               <div className="banner-art" aria-hidden="true">
                 <div className="art-orbit orbit-outer" />
@@ -485,7 +521,7 @@ export function AppDashboard({
                 Увійти до спільноти <ArrowRight size={16} />
               </Link>
               <span className="join-footnote">
-                Немає акаунта? Реєстрація буде доступна через Telegram-бота.
+                Реєстрація/регистрация проходит через Telegram-бота. Після входу в бот можна перейти на сайт: {siteUrl}
               </span>
             </section>
 
@@ -523,7 +559,8 @@ export function AppDashboard({
               </div>
               <p>
                 Увійди, щоб налаштувати профіль. Реєстрація на платформі
-                відбуватиметься через особистого Telegram-бота.
+                відбувається через Telegram-бота. Після цього можна виконати
+                вхід на сайт і почати публікувати дописи.
               </p>
               <Link className="side-card-link" href="/login">
                 Перейти до входу <ArrowRight size={15} />
