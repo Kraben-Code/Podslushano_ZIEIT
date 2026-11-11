@@ -3205,3 +3205,13 @@ input:focus-visible {
     gap: 9px;
   }
 }
+
+.chat-layout {
+  grid-template-columns: minmax(190px, 0.65fr) minmax(0, 1.8fr);
+}
+
+@media (max-width: 720px) {
+  .chat-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

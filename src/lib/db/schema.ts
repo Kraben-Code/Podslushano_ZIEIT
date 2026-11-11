@@ -183,3 +183,51 @@ export const loginAttempts = pgTable(
   },
   (table) => [index("login_attempts_updated_at_idx").on(table.updatedAt)],
 );
+
+export const chatRooms = pgTable("chat_rooms", {
+  key: varchar("key", { length: 40 }).primaryKey(),
+  name: varchar("name", { length: 64 }).notNull(),
+  description: varchar("description", { length: 160 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    roomKey: varchar("room_key", { length: 40 })
+      .notNull()
+      .references(() => chatRooms.key, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: varchar("type", { length: 16 }).notNull().default("message"),
+    content: varchar("content", { length: 1000 }).notNull().default(""),
+    listingTitle: varchar("listing_title", { length: 100 }),
+    listingPrice: integer("listing_price"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("chat_messages_room_created_idx").on(
+      table.roomKey,
+      table.createdAt,
+      table.id,
+    ),
+    check(
+      "chat_messages_type_valid",
+      sql`${table.type} in ('message', 'listing')`,
+    ),
+    check(
+      "chat_messages_listing_fields_valid",
+      sql`(${table.type} = 'listing' and ${table.listingTitle} is not null) or (${table.type} = 'message' and ${table.listingTitle} is null and ${table.listingPrice} is null)`,
+    ),
+    check(
+      "chat_messages_listing_price_nonnegative",
+      sql`${table.listingPrice} is null or ${table.listingPrice} >= 0`,
+    ),
+  ],
+);
